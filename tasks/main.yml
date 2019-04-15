@@ -1,6 +1,6 @@
 ---
 
-- name: SKOPEO - Check if the image already exists in destination for {{entry.name}} v{{entry.version}}
+- name: SKOPEO - Check if the image already exists in destination for {{entry.name}} {{entry.version}}
   shell: (skopeo inspect --tls-verify=false --creds={{entry.dest_credentials}} docker://{{entry.dest_image_stream_tag}} &> /dev/null && echo '1') || echo '0'
   register: skopeo_result
 
@@ -10,6 +10,6 @@
 - when: (skopeo_result is failed) or (skopeo_result.stdout=="1")
   set_fact: skopeo_proceed=false
 
-- name: SKOPEO - Copy docker image for {{entry.name}} v{{entry.version}}
+- name: SKOPEO - Copy docker image for {{entry.name}} {{entry.version}}
   shell: skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds={{entry.src_credentials}} --dest-creds={{entry.dest_credentials}} docker://{{entry.src_image_stream_tag}} docker://{{entry.dest_image_stream_tag}}
   when: skopeo_proceed==true
