@@ -1,15 +1,64 @@
 ---
 
+- fail:
+    msg: "Invalid value for 'images_import_mode'. Supported modes are 'docker' and 'skopeo'."
+  when: (images_import_mode!="skopeo") and (images_import_mode!="docker")
+
+##############################################################################################
+##############################################################################################
+################ M A N I P U L A T E   I M A G E S   U S I N G   S K O P E O #################
+##############################################################################################
+##############################################################################################
+
+- name: Check that Skopeo is locally installed...
+  when: (images_import_mode=="skopeo")
+  shell: "skopeo --version"
+
 - name: SKOPEO - Check if the image already exists in destination for {{entry.name}} {{entry.version}}
-  shell: (skopeo inspect --tls-verify=false --creds={{entry.dest_credentials}} docker://{{entry.dest_image_stream_tag}} &> /dev/null && echo '1') || echo '0'
+  when: (images_import_mode=="skopeo")
+  shell: (skopeo inspect --tls-verify=false --creds={{ (entry.registry_username + ':' + entry.registry_password) }} docker://{{entry.dest_image_stream_tag}} &> /dev/null && echo '1') || echo '0'
   register: skopeo_result
 
-- when: (skopeo_result is not failed) and (skopeo_result.stdout=="0")
+- when: (images_import_mode=="skopeo") and (skopeo_result is not failed) and (skopeo_result.stdout=="0")
   set_fact: skopeo_proceed=true
 
-- when: (skopeo_result is failed) or (skopeo_result.stdout=="1")
+- when: (images_import_mode=="skopeo") and ((skopeo_result is failed) or (skopeo_result.stdout=="1"))
   set_fact: skopeo_proceed=false
 
 - name: SKOPEO - Copy docker image for {{entry.name}} {{entry.version}}
-  shell: skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds={{entry.src_credentials}} --dest-creds={{entry.dest_credentials}} docker://{{entry.src_image_stream_tag}} docker://{{entry.dest_image_stream_tag}}
-  when: skopeo_proceed==true
+  when: (images_import_mode=="skopeo") and (skopeo_proceed==true)
+  shell: skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds={{ (entry.source_registry_username + ':' + entry.source_registry_password) }} --dest-creds={{ (entry.registry_username + ':' + entry.registry_password) }} docker://{{entry.src_image_stream_tag}} docker://{{entry.dest_image_stream_tag}}
+
+##############################################################################################
+##############################################################################################
+################ M A N I P U L A T E   I M A G E S   U S I N G   D O C K E R #################
+##############################################################################################
+##############################################################################################
+
+- name: DOCKER - Check that Docker is locally installed...
+  when: (images_import_mode=="docker")
+  shell: "docker info"
+
+- name: DOCKER - Log into the source private registry and force re-authorization
+  when: (images_import_mode=="docker")
+  shell: "docker login {{entry.source_registry_url}} --username={{entry.source_registry_username}} --password={{entry.source_registry_password}} {% if entry.source_registry_email is defined and entry.source_registry_email %} --email={{entry.source_registry_email}}{%endif%}"
+
+- name: DOCKER - Pull image {{entry.name}} {{entry.version}} from the source docker registry
+  when: (images_import_mode=="docker")
+  shell: "docker pull {{entry.src_image_stream_tag}}"
+
+- name: DOCKER - Tag the image in the local docker registry pointing to the private docker registry
+  when: (images_import_mode=="docker")
+  shell: "docker tag {{entry.src_image_stream_tag}} {{entry.dest_image_stream_tag}}"
+
+- name: DOCKER - Log into the private registry and force re-authorization
+  when: (images_import_mode=="docker")
+  shell: "docker login {{entry.registry_url}} --username={{entry.registry_username}} --password={{entry.registry_password}} {% if entry.registry_email is defined and entry.registry_email %} --email={{entry.registry_email}}{%endif%}"
+
+- name: DOCKER - Push the image {{entry.name}} {{entry.version}} to the private docker registry
+  when: (images_import_mode=="docker")
+  shell: "docker push {{entry.dest_image_stream_tag}}"
+
+- name: DOCKER - Log into the destination private registry and force re-authorization
+  when: (images_import_mode=="docker")
+  shell: "docker login {{entry.registry_url}} --username={{entry.registry_username}} --password={{entry.registry_password}}"
